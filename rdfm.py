@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import urllib
 if sys.version_info.major == 3:
@@ -7,6 +8,7 @@ else:
     from urlparse import urlparse
 
 import RDF
+import collections
 
 from IPython.core import page
 from IPython.core.magic import (Magics, magics_class, cell_magic, line_magic,
@@ -45,7 +47,7 @@ def display_node(node, mime_type):
     else:
         template = '{curie}'
     
-    if node.is_resource():
+    if isinstance(node, RDF.Node) and node.is_resource():
         match = ""
         uri = str(node.uri)
         curie = uri
@@ -69,10 +71,13 @@ class Node(RDF.Node):
 Uri = RDF.Uri
 NS = RDF.NS
 
-class LibRdfResults(HTML):
-    def __init__(self, model, query):
-        self.model = model
-        self.query = query
+class LibRdfResults(collections.Sequence):
+    results = None
+    columns = None
+    def __init__(self, result_set):
+        if result_set is not None:
+            self.columns = self.get_bindings(result_set)
+            self.results = self.get_results(result_set)
 
     def get_bindings(self, result_set):
         b = []
@@ -80,22 +85,28 @@ class LibRdfResults(HTML):
             b.append(result_set.get_binding_name(i))
         return b
 
-    def __iter__(self):
-        results =  self.query.execute(self.model)
-        if results is None:
-            raise StopIteration("No results")
+    def get_results(self, result_set):
+        results = []
+        for row in result_set:
+            record = [ row[k] for k in self.columns ]
+            results.append(record)
         return results
+
+    def __getitem__(self, key):
+        return dict(zip(self.columns, self.results[key]))
+
+    def __len__(self):
+        return len(self.results)
 
     def generate_html(self):
         result_set = iter(self)
-        columns = self.get_bindings(result_set)
         yield '<table><tr>'
-        for c in columns:
+        for c in self.columns:
             yield "<td>{0}</td>".format(str(c))
         yield '</tr>'
         for row in self:
             yield '<tr>'
-            for key in columns:
+            for key in self.columns:
                 value = row[key]
                 yield '<td>'
                 yield display_node(value, mime_type='text/html')
@@ -109,19 +120,18 @@ class LibRdfResults(HTML):
     def __str__(self):
         result_set = iter(self)
         output = []
-        columns = self.get_bindings(result_set)
-        output.append("\t".join(columns))
-        for row in result_set:
-            ordered = (display_node(row[key], mime_type='text/plain')
-                       for key in columns)
+        output.append("\t".join(self.columns))
+        for row in self.results:
+            ordered = (display_node(value, mime_type='text/plain')
+                       for value in row)
             output.append("\t".join(ordered))
         return os.linesep.join(output)
 
 @magics_class
 class SPARQLMagics(Magics):
+    SUPPORT_FROM = False
     def __init__(self, shell):
         super(SPARQLMagics, self).__init__(shell)
-
 
     @magic_arguments()
     @argument('prefix', nargs=1, type=str,
@@ -189,13 +199,14 @@ class SPARQLMagics(Magics):
                    "intermediate results in.")               
     @argument('-o', '--output', type=str, default=None,
               help="Specifiy variable to hold output")
-    @argument('sources', nargs='*', type=str, default=None,
-              help='a url or variable to execute the query against.')
     @cell_magic
     def sparql(self, line, cell=None):
         arg = parse_argstring(self.sparql, line)
 
-        if arg.model is None and len(arg.sources) == 0:
+        sources = []
+        if cell is not None:
+            sources, cell = extract_froms(cell)
+        if arg.model is None and len(sources) == 0:
             raise UsageError("Please specify a source to query against.")
 
         if arg.model is not None:
@@ -205,7 +216,7 @@ class SPARQLMagics(Magics):
         else:
             model = make_temp_model()
 
-        for source in arg.sources:
+        for source in sources:
             if source.startswith("tracker:"):
                 raise NotImplemented("Tracker queries not implemented yet")
             else: 
@@ -213,12 +224,31 @@ class SPARQLMagics(Magics):
 
         body = prepare_query(cell)
         query = RDF.SPARQLQuery(body)
-        results = LibRdfResults(model, query)
+        results = LibRdfResults(query.execute(model))
 
         if arg.output is None:
             return results
         else:
             self.shell.user_ns[arg.output] = results
+
+def extract_froms(cell, remove=True):
+    """Extract from statements from sparql query
+    librdf doesn't actually use the froms.
+
+    if remove is true, remove the from statements from the query
+    returns ([url, url], query)
+    """
+    from_re = re.compile(
+        "from <(?P<url>[A-Za-z0-9!@#$%^&*()-_\\|\'\"/?\]\[{}+=]+)>",
+        re.IGNORECASE)
+    froms = []
+    match = from_re.search(cell)
+    while match is not None:
+        froms.append(match.group('url'))
+        if remove:
+            cell = from_re.sub('', cell, 1)
+        match = from_re.search(cell)
+    return froms, cell
 
 def prepare_query(cell):
     """Add additional our namespaces to head of query
