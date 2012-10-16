@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import types
 import urllib
 if sys.version_info.major == 3:
     from urllib.parse import urlparse
@@ -40,13 +41,13 @@ _namespaces = dict(( (v, k) for k, v in _prefixes.items()))
 def dump_model(model):
     export = RDF.Serializer(name='turtle')
     print (export.serialize_model_to_string(model))
-    
+
 def display_node(node, mime_type):
     if mime_type == 'text/html':
         template = '<a href="{anchor}">{curie}</a>'
     else:
         template = '{curie}'
-    
+
     if isinstance(node, RDF.Node) and node.is_resource():
         match = ""
         uri = str(node.uri)
@@ -147,6 +148,7 @@ class SPARQLMagics(Magics):
         prefix = args.prefix[0]
         _namespaces[namespace] = prefix
         _prefixes[prefix] = namespace
+        self.shell.user_ns[prefix] = RDF.NS(namespace)
 
     @line_magic
     def lsns(self, line=None):
@@ -171,13 +173,16 @@ class SPARQLMagics(Magics):
         if name in _prefixes:
             del _namespaces[self._prefixes[name]]
             del _prefixes[name]
+            del self.shell.user_ns[name]
         elif name in _namespaces:
-            del _prefixes[self._namespaces[name]]
+            prefix = self._namespaces[name]
+            del _prefixes[prefix]
             del _namespaces[name]
+            del self.shell.user_ns[prefix]
         else:
             raise UsageError("%s was not found in our namespace cache" % (
                 name,))
-        
+
     @magic_arguments()
     @argument('-D', '--data', default=None, type=str,
               help="Add RDF Data source URI")
@@ -196,30 +201,29 @@ class SPARQLMagics(Magics):
     @magic_arguments()
     @argument('-m', '--model', default=None,
               help="use specified variable as the model to store "\
-                   "intermediate results in.")               
+                   "intermediate results in.")
     @argument('-o', '--output', type=str, default=None,
               help="Specifiy variable to hold output")
+    @argument('-s', '--source', default=None,
+              help="Source can be a literal, a python string, or python list")
     @cell_magic
     def sparql(self, line, cell=None):
         arg = parse_argstring(self.sparql, line)
 
-        sources = []
         if cell is not None:
             sources, cell = extract_froms(cell)
+
+        sources.extend(self._parse_source(arg.source))
+
         if arg.model is None and len(sources) == 0:
             raise UsageError("Please specify a source to query against.")
 
-        if arg.model is not None:
-            model = self.shell.user_ns.get(arg.model)
-            if not isinstance(model, RDF.Model):
-                raise ValueError("Model needs to be RDF.Model")
-        else:
-            model = make_temp_model()
+        model = self._get_model(arg.model)
 
         for source in sources:
             if source.startswith("tracker:"):
                 raise NotImplemented("Tracker queries not implemented yet")
-            else: 
+            else:
                 load_source(model, source)
 
         body = prepare_query(cell)
@@ -230,6 +234,51 @@ class SPARQLMagics(Magics):
             return results
         else:
             self.shell.user_ns[arg.output] = results
+
+    @magic_arguments()
+    @argument('-m', '--model', default=None,
+              help="use specified variable as the model to store "\
+                   "intermediate results in.")
+    @argument('sources', nargs='*', default=None,
+              help="Source can be a literal, a python string, or python list")
+    @line_magic
+    def load_source(self, line):
+        arg = parse_argstring(self.load_source, line)
+        model = self._get_model(arg.model)
+
+        sources = []
+        if arg.sources is not None:
+            for s in arg.sources:
+                sources.extend(self._parse_source(s))
+
+        for s in sources:
+            load_source(model, s)
+
+        if arg.model is not None:
+            return model
+
+
+    def _get_model(self, variable):
+        """Get model from user name space, or make a new one"""
+        if variable is not None:
+            m = self.shell.user_ns.get(variable)
+            if not isinstance(m, RDF.Model):
+                raise ValueError("Model needs to be RDF.Model")
+        else:
+            m = make_temp_model()
+        return m
+
+    def _parse_source(self, variable):
+        """parse a source argument and return a list of sources
+        """
+        sources = []
+        if variable is not None:
+            source = self.shell.user_ns.get(variable, variable)
+            if type(source) in types.StringTypes:
+                sources.append(source)
+            elif isinstance(source, collections.Iterable):
+                sources.extend(source)
+        return sources
 
 def extract_froms(cell, remove=True):
     """Extract from statements from sparql query
@@ -259,7 +308,7 @@ def prepare_query(cell):
         query.append(template.format(prefix=prefix, url=namespace))
     query.append(cell)
     return os.linesep.join(query)
-        
+
 def make_temp_model():
     """Make a scratch model
     """
@@ -268,6 +317,9 @@ def make_temp_model():
     return m
 
 def load_source(model, source):
+    if isinstance(source, RDF.Node):
+        source = str(source.uri)
+
     url = urlparse(source)
     if url.scheme is None:
         source = 'file://'+os.path.abspath(source)
@@ -279,7 +331,7 @@ def load_source(model, source):
         if stream.code == 200:
             parser = guess_parser(content_type, url.path)
 
-    elif url.schme in ('file'):
+    elif url.scheme in ('file'):
         # local
         if not os.path.exists(url.path):
             raise IOError("File %s does not exist" % (url.path,))
@@ -289,28 +341,32 @@ def load_source(model, source):
     body = stream.read()
     stream.close()
     parser.parse_string_into_model(model, body, source)
-    
+
 def guess_parser(content_type, pathname):
     name = guess_parser_name(content_type, pathname)
     return RDF.Parser(name=name)
 
 def guess_parser_name(content_type, pathname):
+    if content_type is None or content_type.startswith('text/plain'):
+        return guess_parser_name_by_extension(pathname)
     if content_type.startswith('application/rdf+xml'):
         return 'rdfxml'
     elif content_type.startswith('application/x-turtle'):
         return 'turtle'
+    elif content_type.startswith('text/turtle'):
+        return 'turtle'
     elif content_type.startswith('text/html'):
         return 'rdfa'
-    elif content_type is None or content_type.startswith('text/plain'):
-        return guess_parser_by_extension(pathname)
+    else:
+        return 'guess'
 
 def guess_parser_name_by_extension(pathname):
     _, ext = os.path.splitext(pathname)
     if ext in ('.xml', '.rdf'):
         return 'rdfxml'
-    elif ext in ('.html',):
+    elif ext in ('.html','.xhtml'):
         return 'rdfa'
-    elif ext in ('.turtle',):
+    elif ext in ('.turtle','.ttl'):
         return 'turtle'
     return 'guess'
 
@@ -322,4 +378,3 @@ def load_ipython_extension(ip):
     if not _loaded:
         ip.register_magics(SPARQLMagics)
         _loaded = True
-
