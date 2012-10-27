@@ -257,7 +257,6 @@ class SPARQLMagics(Magics):
         if arg.model is not None:
             return model
 
-
     def _get_model(self, variable):
         """Get model from user name space, or make a new one"""
         if variable is not None:
@@ -279,6 +278,29 @@ class SPARQLMagics(Magics):
             elif isinstance(source, collections.Iterable):
                 sources.extend(source)
         return sources
+
+    @magic_arguments()
+    @argument('-m', '--model', default=None,
+              help="use specified variable as the model to store "\
+                   "intermediate results in.")
+    @argument('-f', '--format', default='turtle',
+              help="Specify format to save model as")
+    @argument('filename', nargs=1, type=str, help="filename to save model as")
+    @line_magic
+    def save_model(self, line):
+        arg = parse_argstring(self.load_source, line)
+        model = self._get_model(arg.model)
+        if model is None:
+            UsageError("Please specify a model to save")
+
+        if arg.filename is None:
+            UsageError("Please specify a destination")
+            
+        serializer = RDF.Serializer(name=arg.name)
+        with open(arg.filename, 'w') as outstream:
+            outstream.write(serializer.serialize_model_to_string())
+            outstream.write('\n')
+        
 
 def extract_froms(cell, remove=True):
     """Extract from statements from sparql query
