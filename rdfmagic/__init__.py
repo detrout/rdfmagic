@@ -3,6 +3,8 @@ import re
 import sys
 import types
 import urllib
+from httplib import HTTPException
+
 if sys.version_info.major == 3:
     from urllib.parse import urlparse
 else:
@@ -16,13 +18,6 @@ from IPython.core.magic import (Magics, magics_class, cell_magic, line_magic,
                                 line_cell_magic, needs_local_scope, UsageError)
 from IPython.core.magic_arguments import (
     argument, magic_arguments, parse_argstring)
-
-from IPython.core.displaypub import (
-    publish_pretty, publish_html,
-    publish_latex, publish_svg,
-    publish_png, publish_json,
-    publish_javascript, publish_jpeg
-)
 
 from IPython.core.display import HTML
 
@@ -206,6 +201,8 @@ class SPARQLMagics(Magics):
               help="Specifiy variable to hold output")
     @argument('-s', '--source', default=None,
               help="Source can be a literal, a python string, or python list")
+    @argument('-c', '--count', default=False, action="store_true",
+              help="output count of rows returned")
     @cell_magic
     def sparql(self, line, cell=None):
         arg = parse_argstring(self.sparql, line)
@@ -230,6 +227,9 @@ class SPARQLMagics(Magics):
         query = RDF.SPARQLQuery(body)
         results = LibRdfResults(query.execute(model))
 
+        if arg.count:
+            print ("Found {0} rows.".format(len(results)))
+            
         if arg.output is None:
             return results
         else:
@@ -295,12 +295,12 @@ class SPARQLMagics(Magics):
 
         if arg.filename is None:
             UsageError("Please specify a destination")
-            
+
         serializer = RDF.Serializer(name=arg.name)
         with open(arg.filename, 'w') as outstream:
             outstream.write(serializer.serialize_model_to_string())
             outstream.write('\n')
-        
+
 
 def extract_froms(cell, remove=True):
     """Extract from statements from sparql query
@@ -352,6 +352,8 @@ def load_source(model, source):
         content_type = stream.headers.get('content-type')
         if stream.code == 200:
             parser = guess_parser(content_type, url.path)
+        else:
+            raise HTTPException("Problem opening {}: {}".format(source, stream.code))
 
     elif url.scheme in ('file'):
         # local
