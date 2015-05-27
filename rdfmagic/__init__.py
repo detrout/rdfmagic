@@ -221,7 +221,8 @@ class SPARQLMagics(Magics):
         if cell is not None:
             sources, cell = extract_froms(cell)
 
-        sources.extend(self._parse_source(arg.source))
+        source = self.shell.user_ns.get(arg.source, arg.source)
+        sources.extend(self._parse_source(source))
 
         if arg.model is None and len(sources) == 0:
             raise UsageError("Please specify a source to query against.")
@@ -259,8 +260,9 @@ class SPARQLMagics(Magics):
 
         sources = []
         if arg.sources is not None:
-            for s in arg.sources:
-                sources.extend(self._parse_source(s))
+            for variable_name in arg.sources:
+                source = self.shell.user_ns.get(variable_name, variable_name)
+                sources.extend(self._parse_source(source))
 
         for s in sources:
             load_source(model, s)
@@ -278,16 +280,21 @@ class SPARQLMagics(Magics):
             m = make_temp_model()
         return m
 
-    def _parse_source(self, variable):
+    def _parse_source(self, source):
         """parse a source argument and return a list of sources
         """
         sources = []
-        if variable is not None:
-            source = self.shell.user_ns.get(variable, variable)
-            if type(source) in types.StringTypes:
-                sources.append(source)
-            elif isinstance(source, collections.Iterable):
-                sources.extend(source)
+        if isinstance(source, six.string_types):
+            sources.append(source)
+        elif isinstance(source, RDF.Node):
+            sources.append(source)
+        elif isinstance(source, LibRdfResults):
+            for result in source:
+                for value in result.values():
+                    if isinstance(value, RDF.Node):
+                        sources.append(value)
+        elif isinstance(source, collections.Iterable):
+            sources.extend(source)
         return sources
 
     @magic_arguments()
