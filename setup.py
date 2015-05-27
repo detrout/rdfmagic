@@ -24,6 +24,6 @@ setup(
     author='Diane Trout',
     author_email='diane@ghic.org',
     packages=['rdfmagic'],
-    install_requires=['IPython >= 0.12'],
+    install_requires=['IPython >= 0.12', 'six'],
     test_suite='rdfmagic.test.test_rdfmagic.suite'
 )

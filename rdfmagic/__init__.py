@@ -16,6 +16,12 @@
 
 import os
 import re
+import six
+
+from six.moves import range
+from six.moves.urllib.error import HTTPError
+from six.moves.urllib.parse import urlparse
+from six.moves.urllib.request import urlopen
 
 import RDF
 import collections
@@ -82,7 +88,7 @@ class LibRdfResults(collections.Sequence):
 
     def get_bindings(self, result_set):
         b = []
-        for i in xrange(result_set.get_bindings_count()):
+        for i in range(result_set.get_bindings_count()):
             b.append(result_set.get_binding_name(i))
         return b
 
@@ -353,12 +359,13 @@ def load_source(model, source):
         url = urlparse(source)
     if url.scheme in ('http', 'https'):
         # remote,
-        stream = urllib.urlopen(source)
+        stream = urlopen(source)
         content_type = stream.headers.get('content-type')
         if stream.code == 200:
             parser = guess_parser(content_type, url.path)
         else:
-            raise HTTPException("Problem opening {}: {}".format(source, stream.code))
+            raise HTTPError("Problem opening {}: {}".format(
+                source, stream.code))
 
     elif url.scheme in ('file'):
         # local
