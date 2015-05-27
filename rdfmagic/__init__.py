@@ -16,26 +16,15 @@
 
 import os
 import re
-import sys
-import types
-import urllib
-from httplib import HTTPException
-
-if sys.version_info.major == 3:
-    from urllib.parse import urlparse
-else:
-    from urlparse import urlparse
 
 import RDF
 import collections
 
-from IPython.core import page
 from IPython.core.magic import (Magics, magics_class, cell_magic, line_magic,
-                                line_cell_magic, needs_local_scope, UsageError)
+                                line_cell_magic, UsageError)
 from IPython.core.magic_arguments import (
     argument, magic_arguments, parse_argstring)
 
-from IPython.core.display import HTML
 
 _prefixes = {
     'rdf': "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
