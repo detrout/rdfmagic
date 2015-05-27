@@ -14,6 +14,7 @@
 # License Version 2.1 along with this package; if not, write to the
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
 # MA 02110-1301 USA
+
 import os
 import shutil
 import tempfile
@@ -41,6 +42,7 @@ testdata = '''
     foaf:name "Spiderman", "Человек-паук"@ru .
 '''
 
+
 class TestRDFMagic(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.mkdtemp(prefix='test_rdfm_')
@@ -48,13 +50,13 @@ class TestRDFMagic(unittest.TestCase):
         self.tempurl = 'file://' + self.tempfile
         with open(self.tempfile, 'w') as outstream:
             outstream.write(testdata)
-            
+
         self.shell = InteractiveShell()
         self.magic = rdfmagic.SPARQLMagics(self.shell)
         for ns_cmd in [
-            "libns http://jumpgate.caltech.edu/wiki/LibraryOntology#",
-            "htslib http://jumpgate.caltech.edu/library/",
-            "htsflow http://jumpgate.caltech.edu/flowcell/"]:
+                "libns http://jumpgate.caltech.edu/wiki/LibraryOntology#",
+                "htslib http://jumpgate.caltech.edu/library/",
+                "htsflow http://jumpgate.caltech.edu/flowcell/"]:
             self.magic.addns(ns_cmd)
 
     def tearDown(self):
