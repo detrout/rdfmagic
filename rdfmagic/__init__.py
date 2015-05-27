@@ -386,9 +386,11 @@ def load_source(model, source):
     stream.close()
     parser.parse_string_into_model(model, body, source)
 
+
 def guess_parser(content_type, pathname):
     name = guess_parser_name(content_type, pathname)
     return RDF.Parser(name=name)
+
 
 def guess_parser_name(content_type, pathname):
     if content_type is None or content_type.startswith('text/plain'):
