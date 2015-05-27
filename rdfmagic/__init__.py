@@ -373,15 +373,16 @@ def load_source(model, source):
         else:
             raise HTTPError("Problem opening {}: {}".format(
                 source, stream.code))
+        body = stream.read().decode(stream.headers.get_content_charset())
 
     elif url.scheme in ('file'):
         # local
         if not os.path.exists(url.path):
             raise IOError("File %s does not exist" % (url.path,))
-        stream = open(url.path, 'r')
+        stream = open(url.path, 'rt')
         parser = guess_parser(None, url.path)
+        body = stream.read()
 
-    body = stream.read()
     stream.close()
     parser.parse_string_into_model(model, body, source)
 
