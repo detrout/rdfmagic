@@ -29,19 +29,20 @@ that will be added to sparql queries.
   removes a prefix from the dictionary of default prefixes
 
 %%sparql 
-  issues a sparql query. (can takes a number of arguments)
+  issues a sparql query. Providing at least a model or a source is required.
   
     -m --model <arg>
-        specify model name to run query against
+        specify model variable to run query against. If no model is set,
+        it will use a new temporary memory model
+    -s --source <arg>
+        add source url to pre-load data from.
     -o --output <arg>
         specify variable to store result of query in
-    -s --source <arg>
-        add source to model
     -c --count
         display how many triples were returned
 
 %load_source [source]*
-  load a list of source into a model
+  load a list of sources into a model
 
     -m --model <arg>
         model name to store triples in
